@@ -1,0 +1,743 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}{{ projeto.nome }} — BK ERP{% endblock %}
+{% block page_title %}{{ projeto.nome }}{% endblock %}
+{% block page_sub %}#{{ projeto.id }} · {{ projeto.get_status_display }} · {{ projeto.gerente|default:"Sem gerente" }}{% endblock %}
+
+{% block topbar_actions %}
+{% if is_admin %}
+<a href="{% url 'projetos:acessos' projeto.pk %}" class="btn btn-sm" style="background:rgba(139,92,246,0.15);color:#C4B5FD;border:1px solid rgba(139,92,246,0.3);">
+  👥 Acessos
+</a>
+<button id="btn-salvar" class="btn btn-primary btn-sm" onclick="salvarProjeto()">
+  💾 Salvar
+</button>
+{% endif %}
+<a href="{% url 'projetos:lista' %}" class="btn btn-secondary btn-sm">← Voltar</a>
+{% endblock %}
+
+{% block extra_css %}
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<style>
+  .info-box {
+    background: rgba(59,130,246,0.08);
+    border: 1px solid rgba(59,130,246,0.2);
+    border-radius: 8px; padding: 12px 16px;
+    color: var(--bk-text); font-size: 13px;
+  }
+  .eap-table th, .eap-table td { padding: 8px 12px; font-size: 12px; }
+  .eap-row-summary td { font-weight: 700; background: rgba(20,184,166,0.08); }
+  .eap-row-normal td { }
+  .risk-matrix { display: grid; grid-template-columns: repeat(5,1fr); gap: 4px; }
+  .risk-cell {
+    padding: 8px; border-radius: 6px; text-align: center;
+    font-size: 11px; font-weight: 600; cursor: default;
+  }
+  .controle-card {
+    background: var(--bk-surface2);
+    border: 1px solid var(--bk-border);
+    border-radius: 10px; padding: 16px; margin-bottom: 12px;
+  }
+  .progress-bar-wrap { background: var(--bk-border); border-radius: 4px; height: 8px; overflow: hidden; }
+  .progress-bar-fill { height: 8px; border-radius: 4px; transition: width 0.3s; }
+  .readonly-field {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--bk-border);
+    border-radius: 8px; padding: 9px 12px;
+    color: var(--bk-text); font-size: 13px;
+    min-height: 38px;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- STATUS BAR -->
+<div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;align-items:center;">
+  {% if projeto.encerrado %}
+  <span class="badge badge-gray">⚫ Encerrado</span>
+  {% else %}
+  <span class="badge badge-green">🟢 Ativo</span>
+  {% endif %}
+  {% if projeto.data_inicio %}
+  <span style="color:var(--bk-text-muted);font-size:13px;">📅 Início: {{ projeto.data_inicio|date:"d/m/Y" }}</span>
+  {% endif %}
+  {% if projeto.patrocinador %}
+  <span style="color:var(--bk-text-muted);font-size:13px;">💼 {{ projeto.patrocinador }}</span>
+  {% endif %}
+</div>
+
+<!-- ABAS -->
+<div class="tabs" id="proj-tabs">
+  <button class="tab-btn active" data-group="proj" data-tab="tab-tap">📜 TAP & Requisitos</button>
+  <button class="tab-btn" data-group="proj" data-tab="tab-eap">📦 EAP / Curva S Trabalho</button>
+  <button class="tab-btn" data-group="proj" data-tab="tab-gantt">📊 Gantt</button>
+  <button class="tab-btn" data-group="proj" data-tab="tab-controle">🗂️ Controle de Projetos</button>
+</div>
+
+<!-- ══════════════════════════════
+     TAB TAP
+══════════════════════════════ -->
+<div class="tab-panel active" data-group="proj" id="tab-tap">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;" class="tap-grid">
+
+    <!-- COLUNA ESQUERDA -->
+    <div>
+      <div class="card">
+        <h3 style="font-size:14px;font-weight:700;margin-bottom:16px;color:var(--bk-blue-light);">📌 Identificação</h3>
+        <div class="form-group">
+          <label class="form-label">Nome do Projeto</label>
+          {% if is_admin %}
+          <input type="text" id="tap-nome" class="form-control" value="{{ tap.nome|default:'' }}">
+          {% else %}
+          <div class="readonly-field">{{ tap.nome|default:"—" }}</div>
+          {% endif %}
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="form-group">
+            <label class="form-label">Data de Início</label>
+            {% if is_admin %}
+            <input type="date" id="tap-dataInicio" class="form-control" value="{{ tap.dataInicio|default:'' }}">
+            {% else %}
+            <div class="readonly-field">{{ tap.dataInicio|default:"—" }}</div>
+            {% endif %}
+          </div>
+          <div class="form-group">
+            <label class="form-label">Status do TAP</label>
+            {% if is_admin %}
+            <select id="tap-status" class="form-control">
+              <option value="rascunho" {% if tap.status == 'rascunho' %}selected{% endif %}>Rascunho</option>
+              <option value="em_aprovacao" {% if tap.status == 'em_aprovacao' %}selected{% endif %}>Em Aprovação</option>
+              <option value="aprovado" {% if tap.status == 'aprovado' %}selected{% endif %}>Aprovado</option>
+              <option value="encerrado" {% if tap.status == 'encerrado' %}selected{% endif %}>Encerrado</option>
+            </select>
+            {% else %}
+            <div class="readonly-field">{{ tap.status|default:"—" }}</div>
+            {% endif %}
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Gerente do Projeto</label>
+          {% if is_admin %}
+          <input type="text" id="tap-gerente" class="form-control" value="{{ tap.gerente|default:'' }}">
+          {% else %}
+          <div class="readonly-field">{{ tap.gerente|default:"—" }}</div>
+          {% endif %}
+        </div>
+        <div class="form-group">
+          <label class="form-label">Patrocinador</label>
+          {% if is_admin %}
+          <input type="text" id="tap-patrocinador" class="form-control" value="{{ tap.patrocinador|default:'' }}">
+          {% else %}
+          <div class="readonly-field">{{ tap.patrocinador|default:"—" }}</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- COLUNA DIREITA -->
+    <div>
+      <div class="card">
+        <h3 style="font-size:14px;font-weight:700;margin-bottom:16px;color:var(--bk-blue-light);">📋 Escopo e Objetivos</h3>
+        <div class="form-group">
+          <label class="form-label">Objetivo do Projeto</label>
+          {% if is_admin %}
+          <textarea id="tap-objetivo" class="form-control">{{ tap.objetivo|default:'' }}</textarea>
+          {% else %}
+          <div class="readonly-field" style="min-height:80px;">{{ tap.objetivo|default:"—"|linebreaksbr }}</div>
+          {% endif %}
+        </div>
+        <div class="form-group">
+          <label class="form-label">Escopo Inicial</label>
+          {% if is_admin %}
+          <textarea id="tap-escopo" class="form-control">{{ tap.escopo|default:'' }}</textarea>
+          {% else %}
+          <div class="readonly-field" style="min-height:80px;">{{ tap.escopo|default:"—"|linebreaksbr }}</div>
+          {% endif %}
+        </div>
+        <div class="form-group">
+          <label class="form-label">Premissas e Restrições</label>
+          {% if is_admin %}
+          <textarea id="tap-premissas" class="form-control">{{ tap.premissas|default:'' }}</textarea>
+          {% else %}
+          <div class="readonly-field" style="min-height:80px;">{{ tap.premissas|default:"—"|linebreaksbr }}</div>
+          {% endif %}
+        </div>
+        <div class="form-group">
+          <label class="form-label">Requisitos Principais</label>
+          {% if is_admin %}
+          <textarea id="tap-requisitos" class="form-control">{{ tap.requisitos|default:'' }}</textarea>
+          {% else %}
+          <div class="readonly-field" style="min-height:80px;">{{ tap.requisitos|default:"—"|linebreaksbr }}</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ALTERAÇÕES DE ESCOPO -->
+  {% if tap.alteracoesEscopo %}
+  <div class="card" style="margin-top:16px;">
+    <h3 style="font-size:14px;font-weight:700;margin-bottom:12px;color:var(--bk-orange);">⚠️ Alterações de Escopo</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Data</th><th>Descrição</th></tr></thead>
+        <tbody>
+          {% for alt in tap.alteracoesEscopo %}
+          <tr>
+            <td style="color:var(--bk-text-muted);white-space:nowrap;">{{ alt.data }}</td>
+            <td>{{ alt.descricao }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if is_admin %}
+  <div style="margin-top:16px;">
+    <button class="btn btn-primary" onclick="salvarProjeto()">💾 Salvar TAP</button>
+  </div>
+  {% endif %}
+</div>
+
+<!-- ══════════════════════════════
+     TAB EAP / CURVA S
+══════════════════════════════ -->
+<div class="tab-panel" data-group="proj" id="tab-eap">
+  <div class="card" style="margin-bottom:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h3 style="font-size:14px;font-weight:700;color:var(--bk-blue-light);">📦 Estrutura Analítica do Projeto (EAP)</h3>
+      {% if is_admin %}
+      <button class="btn btn-primary btn-sm" onclick="adicionarTarefa()">+ Adicionar Tarefa</button>
+      {% endif %}
+    </div>
+    <div class="table-wrap">
+      <table class="eap-table" id="eap-table">
+        <thead>
+          <tr>
+            <th style="width:80px">Código</th>
+            <th>Nome da Atividade</th>
+            <th style="width:70px">Duração (d)</th>
+            <th style="width:100px">Predecessoras</th>
+            <th style="width:80px">% Concluído</th>
+            <th style="width:90px">Status</th>
+            <th style="width:80px">Responsável</th>
+            {% if is_admin %}<th style="width:60px">Ação</th>{% endif %}
+          </tr>
+        </thead>
+        <tbody id="eap-tbody">
+          <!-- preenchido via JS -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- CURVA S TRABALHO -->
+  <div class="card">
+    <h3 style="font-size:14px;font-weight:700;margin-bottom:12px;color:var(--bk-teal);">📈 Curva S de Trabalho</h3>
+    <div id="curva-s-chart" style="height:350px;"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════
+     TAB GANTT
+══════════════════════════════ -->
+<div class="tab-panel" data-group="proj" id="tab-gantt">
+  <div class="card">
+    <h3 style="font-size:14px;font-weight:700;margin-bottom:16px;color:var(--bk-blue-light);">📊 Diagrama de Gantt</h3>
+    <div id="gantt-chart" style="height:500px;"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════
+     TAB CONTROLE DE PROJETOS
+══════════════════════════════ -->
+<div class="tab-panel" data-group="proj" id="tab-controle">
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:20px;" id="controle-kpis">
+    <!-- preenchido via JS -->
+  </div>
+  <div class="card">
+    <h3 style="font-size:14px;font-weight:700;margin-bottom:16px;color:var(--bk-blue-light);">🗂️ Controle de Atividades</h3>
+    <div id="controle-lista"><!-- preenchido via JS --></div>
+  </div>
+</div>
+
+<!-- DADOS JSON PARA JS -->
+<script>
+const IS_ADMIN = {% if is_admin %}true{% else %}false{% endif %};
+const PROJETO_ID = {{ projeto.id }};
+const SAVE_URL = "{% url 'projetos:salvar' projeto.pk %}";
+const CSRF_TOKEN = "{{ csrf_token }}";
+
+// Dados vindos do servidor
+let eapTasks = {{ eap_tasks|safe }};
+let finances = {{ finances|safe }};
+
+// ══════════════════════════════
+// FUNÇÕES DE DADOS
+// ══════════════════════════════
+
+function getDadosAtuais() {
+  const dados = {
+    tap: {
+      nome: el('tap-nome') ? el('tap-nome').value : "{{ tap.nome|default:''|escapejs }}",
+      dataInicio: el('tap-dataInicio') ? el('tap-dataInicio').value : "{{ tap.dataInicio|default:''|escapejs }}",
+      status: el('tap-status') ? el('tap-status').value : "{{ tap.status|default:''|escapejs }}",
+      gerente: el('tap-gerente') ? el('tap-gerente').value : "{{ tap.gerente|default:''|escapejs }}",
+      patrocinador: el('tap-patrocinador') ? el('tap-patrocinador').value : "{{ tap.patrocinador|default:''|escapejs }}",
+      objetivo: el('tap-objetivo') ? el('tap-objetivo').value : "{{ tap.objetivo|default:''|escapejs }}",
+      escopo: el('tap-escopo') ? el('tap-escopo').value : "{{ tap.escopo|default:''|escapejs }}",
+      premissas: el('tap-premissas') ? el('tap-premissas').value : "{{ tap.premissas|default:''|escapejs }}",
+      requisitos: el('tap-requisitos') ? el('tap-requisitos').value : "{{ tap.requisitos|default:''|escapejs }}",
+      alteracoesEscopo: {{ tap.alteracoesEscopo|default:'[]'|safe }},
+    },
+    eapTasks: eapTasks,
+    finances: finances,
+    kpis: {{ projeto.dados.kpis|default:'[]'|safe }},
+    risks: {{ projeto.dados.risks|default:'[]'|safe }},
+    lessons: {{ projeto.dados.lessons|default:'[]'|safe }},
+    close: {{ projeto.dados.close|default:'{}'|safe }},
+    actionPlan: {{ projeto.dados.actionPlan|default:'[]'|safe }},
+  };
+  return dados;
+}
+
+function el(id) { return document.getElementById(id); }
+
+// ══════════════════════════════
+// SALVAR
+// ══════════════════════════════
+async function salvarProjeto() {
+  const btn = el('btn-salvar');
+  if (btn) { btn.textContent = '⏳ Salvando...'; btn.disabled = true; }
+  try {
+    const resp = await fetch(SAVE_URL, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','X-CSRFToken': CSRF_TOKEN},
+      body: JSON.stringify(getDadosAtuais()),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      if (btn) { btn.textContent = '✅ Salvo!'; }
+      setTimeout(() => { if(btn){btn.textContent='💾 Salvar';btn.disabled=false;} }, 2000);
+    } else {
+      alert('Erro ao salvar: ' + (data.erro || 'desconhecido'));
+      if (btn) { btn.textContent = '💾 Salvar'; btn.disabled = false; }
+    }
+  } catch(e) {
+    alert('Erro de conexão.');
+    if (btn) { btn.textContent = '💾 Salvar'; btn.disabled = false; }
+  }
+}
+
+// ══════════════════════════════
+// EAP TABLE
+// ══════════════════════════════
+function renderEAP() {
+  const tbody = el('eap-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  // Determina quais são sumários (têm filhos)
+  const codes = eapTasks.map(t => String(t.codigo || '').trim());
+  const isSummary = {};
+  codes.forEach(c => {
+    const parts = c.split('.');
+    for (let i = 1; i < parts.length; i++) {
+      const parent = parts.slice(0, i).join('.');
+      isSummary[parent] = true;
+    }
+  });
+
+  eapTasks.forEach((t, idx) => {
+    const cod = String(t.codigo || '').trim();
+    const depth = cod.split('.').length - 1;
+    const summary = isSummary[cod] || false;
+    const pct = parseFloat(t.percentualConcluido || t.pct || 0);
+    const status = t.status || 'nao-iniciado';
+
+    const statusBadge = {
+      'concluido': '<span class="badge badge-green">Concluído</span>',
+      'em-andamento': '<span class="badge badge-blue">Em Andamento</span>',
+      'atrasado': '<span class="badge badge-red">Atrasado</span>',
+      'nao-iniciado': '<span class="badge badge-gray">Não Iniciado</span>',
+    }[status] || `<span class="badge badge-gray">${status}</span>`;
+
+    const indent = `padding-left:${12 + depth*20}px`;
+    const rowClass = summary ? 'eap-row-summary' : 'eap-row-normal';
+
+    let actionCell = '';
+    if (IS_ADMIN) {
+      actionCell = `<td>
+        <button class="btn btn-danger btn-sm" onclick="removerTarefa(${idx})">✕</button>
+      </td>`;
+    }
+
+    let nomeCell = IS_ADMIN
+      ? `<input type="text" class="form-control" style="font-size:12px;padding:4px 8px;${summary?'font-weight:700;':''}" value="${escHtml(t.nome||'')}" onchange="eapTasks[${idx}].nome=this.value">`
+      : `<span style="${indent};${summary?'font-weight:700;':''}">${escHtml(t.nome||'')}</span>`;
+
+    let durCell = IS_ADMIN
+      ? `<input type="number" class="form-control" style="font-size:12px;padding:4px 8px;width:60px" value="${t.duracao||0}" onchange="eapTasks[${idx}].duracao=parseInt(this.value)||0">`
+      : `${t.duracao||0}d`;
+
+    let pctCell = IS_ADMIN
+      ? `<input type="number" class="form-control" style="font-size:12px;padding:4px 8px;width:65px" value="${pct}" min="0" max="100" onchange="eapTasks[${idx}].percentualConcluido=parseFloat(this.value)||0">`
+      : `<div style="display:flex;align-items:center;gap:6px;">
+          <div class="progress-bar-wrap" style="flex:1;"><div class="progress-bar-fill" style="width:${pct}%;background:var(--bk-blue);"></div></div>
+          <span style="font-size:11px;color:var(--bk-text-muted)">${pct}%</span>
+        </div>`;
+
+    let statusCell = IS_ADMIN
+      ? `<select class="form-control" style="font-size:11px;padding:3px 6px;" onchange="eapTasks[${idx}].status=this.value">
+          <option value="nao-iniciado" ${status==='nao-iniciado'?'selected':''}>Não Iniciado</option>
+          <option value="em-andamento" ${status==='em-andamento'?'selected':''}>Em Andamento</option>
+          <option value="concluido" ${status==='concluido'?'selected':''}>Concluído</option>
+          <option value="atrasado" ${status==='atrasado'?'selected':''}>Atrasado</option>
+        </select>`
+      : statusBadge;
+
+    tbody.innerHTML += `
+      <tr class="${rowClass}">
+        <td><input type="text" class="form-control" style="font-size:11px;padding:3px 6px;width:70px" value="${escHtml(cod)}" ${IS_ADMIN?`onchange="eapTasks[${idx}].codigo=this.value"`:'readonly'}></td>
+        <td style="${IS_ADMIN?'':''}${!IS_ADMIN?indent:''}">${nomeCell}</td>
+        <td>${durCell}</td>
+        <td><input type="text" class="form-control" style="font-size:11px;padding:3px 6px;" value="${escHtml(String(t.predecessoras||''))}" ${IS_ADMIN?`onchange="eapTasks[${idx}].predecessoras=this.value"`:'readonly'}></td>
+        <td>${pctCell}</td>
+        <td>${statusCell}</td>
+        <td><input type="text" class="form-control" style="font-size:11px;padding:3px 6px;" value="${escHtml(t.responsavel||'')}" ${IS_ADMIN?`onchange="eapTasks[${idx}].responsavel=this.value"`:'readonly'}></td>
+        ${actionCell}
+      </tr>`;
+  });
+}
+
+function adicionarTarefa() {
+  const novoIdx = eapTasks.length + 1;
+  eapTasks.push({
+    codigo: String(novoIdx),
+    nome: 'Nova Atividade',
+    duracao: 5,
+    predecessoras: '',
+    status: 'nao-iniciado',
+    percentualConcluido: 0,
+    responsavel: '',
+  });
+  renderEAP();
+  renderGantt();
+}
+
+function removerTarefa(idx) {
+  if (!confirm('Remover esta atividade?')) return;
+  eapTasks.splice(idx, 1);
+  renderEAP();
+  renderGantt();
+}
+
+// ══════════════════════════════
+// GANTT
+// ══════════════════════════════
+function calcularDatas() {
+  const tapDataInicio = el('tap-dataInicio') ? el('tap-dataInicio').value : "{{ tap.dataInicio|default:'' }}";
+  const inicio = tapDataInicio ? new Date(tapDataInicio) : new Date();
+
+  // Mapa de código → tarefa calculada
+  const mapa = {};
+  eapTasks.forEach(t => {
+    const cod = String(t.codigo || '').trim();
+    mapa[cod] = { ...t, _inicio: null, _fim: null };
+  });
+
+  // Função para obter início de uma tarefa considerando predecessoras
+  function getInicio(cod, visited = new Set()) {
+    if (visited.has(cod)) return 0;
+    visited.add(cod);
+    const t = mapa[cod];
+    if (!t) return 0;
+    const preds = String(t.predecessoras || '').split(',').map(s => s.trim()).filter(Boolean);
+    let maxFim = 0;
+    preds.forEach(p => {
+      const pm = mapa[p];
+      if (pm) {
+        const pInicio = getInicio(p, new Set(visited));
+        const pFim = pInicio + (parseInt(pm.duracao) || 0);
+        maxFim = Math.max(maxFim, pFim);
+      }
+    });
+    return maxFim;
+  }
+
+  const tasks = eapTasks.map(t => {
+    const cod = String(t.codigo || '').trim();
+    const offset = getInicio(cod);
+    const dur = parseInt(t.duracao) || 1;
+    const s = new Date(inicio);
+    s.setDate(s.getDate() + offset);
+    const e = new Date(s);
+    e.setDate(e.getDate() + dur);
+    return { ...t, startDate: s, endDate: e };
+  });
+
+  return tasks;
+}
+
+function renderGantt() {
+  const div = el('gantt-chart');
+  if (!div || eapTasks.length === 0) {
+    if (div) div.innerHTML = '<div style="text-align:center;padding:60px;color:var(--bk-text-muted);">Nenhuma atividade na EAP. Adicione tarefas para gerar o Gantt.</div>';
+    return;
+  }
+
+  const tasks = calcularDatas();
+  const colors = {
+    'concluido': '#10B981',
+    'em-andamento': '#3B82F6',
+    'atrasado': '#EF4444',
+    'nao-iniciado': '#64748B',
+  };
+
+  const data = tasks.map(t => ({
+    x: [t.startDate.toISOString().split('T')[0], t.endDate.toISOString().split('T')[0]],
+    y: [`${t.codigo} — ${t.nome}`],
+    type: 'bar',
+    orientation: 'h',
+    marker: { color: colors[t.status] || '#64748B' },
+    hovertemplate: `<b>${t.nome}</b><br>Início: ${t.startDate.toLocaleDateString('pt-BR')}<br>Fim: ${t.endDate.toLocaleDateString('pt-BR')}<br>Duração: ${t.duracao}d<br>Status: ${t.status}<extra></extra>`,
+    name: t.nome,
+    showlegend: false,
+  }));
+
+  // Plotly Gantt via scatter com barras horizontais
+  const yLabels = tasks.map(t => `${t.codigo} — ${t.nome}`);
+  const ganttData = [{
+    type: 'bar',
+    orientation: 'h',
+    x: tasks.map(t => (t.endDate - t.startDate) / (1000*60*60*24)),
+    y: yLabels,
+    base: tasks.map(t => t.startDate.getTime()),
+    marker: { color: tasks.map(t => colors[t.status] || '#64748B') },
+    text: tasks.map(t => `${t.duracao}d`),
+    textposition: 'inside',
+    hovertemplate: tasks.map(t =>
+      `<b>${t.nome}</b><br>Início: ${t.startDate.toLocaleDateString('pt-BR')}<br>Fim: ${t.endDate.toLocaleDateString('pt-BR')}<br>Duração: ${t.duracao}d<extra></extra>`
+    ),
+  }];
+
+  const layout = {
+    paper_bgcolor: '#0F172A',
+    plot_bgcolor: '#1E293B',
+    font: { family: 'Inter, Arial', color: '#F1F5F9', size: 11 },
+    margin: { l: 200, r: 30, t: 20, b: 40 },
+    xaxis: {
+      type: 'date',
+      gridcolor: '#334155',
+      tickfont: { color: '#94A3B8', size: 10 },
+    },
+    yaxis: {
+      gridcolor: '#334155',
+      tickfont: { color: '#F1F5F9', size: 11 },
+      autorange: 'reversed',
+    },
+    bargap: 0.4,
+    showlegend: false,
+  };
+
+  Plotly.newPlot(div, ganttData, layout, { responsive: true, displayModeBar: false });
+}
+
+// ══════════════════════════════
+// CURVA S TRABALHO
+// ══════════════════════════════
+function renderCurvaS() {
+  const div = el('curva-s-chart');
+  if (!div || eapTasks.length === 0) {
+    if (div) div.innerHTML = '<div style="text-align:center;padding:60px;color:var(--bk-text-muted);">Sem dados suficientes para Curva S.</div>';
+    return;
+  }
+
+  const tasks = calcularDatas();
+  if (!tasks.length) return;
+
+  const minDate = new Date(Math.min(...tasks.map(t => t.startDate)));
+  const maxDate = new Date(Math.max(...tasks.map(t => t.endDate)));
+
+  // Gera semanas entre min e max
+  const semanas = [];
+  let cur = new Date(minDate);
+  while (cur <= maxDate) {
+    semanas.push(new Date(cur));
+    cur.setDate(cur.getDate() + 7);
+  }
+  if (!semanas.length) return;
+
+  const totalDias = tasks.reduce((s, t) => s + (parseInt(t.duracao) || 0), 0);
+  const planejado = [];
+  const realizado = [];
+  let acumPlan = 0, acumReal = 0;
+
+  semanas.forEach(semFim => {
+    const semInicio = new Date(semFim);
+    semInicio.setDate(semInicio.getDate() - 7);
+
+    let diasPlanSem = 0, diasRealSem = 0;
+    tasks.forEach(t => {
+      const overlap = Math.max(0, (
+        Math.min(t.endDate, semFim) - Math.max(t.startDate, semInicio)
+      ) / (1000*60*60*24));
+      diasPlanSem += overlap;
+      if (t.status === 'concluido') diasRealSem += overlap;
+      else if (t.status === 'em-andamento') diasRealSem += overlap * (parseFloat(t.percentualConcluido || 0) / 100);
+    });
+
+    acumPlan += totalDias > 0 ? (diasPlanSem / totalDias) * 100 : 0;
+    acumReal += totalDias > 0 ? (diasRealSem / totalDias) * 100 : 0;
+    planejado.push(Math.min(100, acumPlan));
+    realizado.push(Math.min(100, acumReal));
+  });
+
+  const labels = semanas.map(d => d.toLocaleDateString('pt-BR'));
+
+  const chartData = [
+    {
+      x: labels, y: planejado, name: 'Planejado',
+      type: 'scatter', mode: 'lines+markers',
+      line: { color: '#3B82F6', width: 2 },
+      marker: { size: 5 },
+    },
+    {
+      x: labels, y: realizado, name: 'Realizado',
+      type: 'scatter', mode: 'lines+markers',
+      line: { color: '#10B981', width: 2, dash: 'dot' },
+      marker: { size: 5 },
+    },
+  ];
+
+  Plotly.newPlot(div, chartData, {
+    paper_bgcolor: '#0F172A', plot_bgcolor: '#1E293B',
+    font: { family: 'Inter, Arial', color: '#F1F5F9', size: 11 },
+    margin: { l: 50, r: 20, t: 20, b: 60 },
+    xaxis: { gridcolor: '#334155', tickangle: -45, tickfont: { size: 10 } },
+    yaxis: { gridcolor: '#334155', title: '% Acumulado', range: [0, 105] },
+    legend: { orientation: 'h', y: 1.1 },
+  }, { responsive: true, displayModeBar: false });
+}
+
+// ══════════════════════════════
+// CONTROLE DE PROJETOS
+// ══════════════════════════════
+function renderControle() {
+  const kpisDiv = el('controle-kpis');
+  const listaDiv = el('controle-lista');
+  if (!kpisDiv || !listaDiv) return;
+
+  const total = eapTasks.length;
+  const concluidas = eapTasks.filter(t => t.status === 'concluido').length;
+  const andamento = eapTasks.filter(t => t.status === 'em-andamento').length;
+  const atrasadas = eapTasks.filter(t => t.status === 'atrasado').length;
+  const naoIniciadas = eapTasks.filter(t => !t.status || t.status === 'nao-iniciado').length;
+  const pctGeral = total > 0 ? Math.round(eapTasks.reduce((s,t) => s + parseFloat(t.percentualConcluido||0), 0) / total) : 0;
+
+  kpisDiv.innerHTML = `
+    <div class="kpi-card" style="border-left:3px solid var(--bk-blue)">
+      <div class="kpi-label">Total Atividades</div>
+      <div class="kpi-value">${total}</div>
+      <div class="kpi-sub">${pctGeral}% concluído</div>
+    </div>
+    <div class="kpi-card" style="border-left:3px solid var(--bk-green)">
+      <div class="kpi-label">Concluídas</div>
+      <div class="kpi-value" style="color:var(--bk-green)">${concluidas}</div>
+      <div class="kpi-sub">${andamento} em andamento</div>
+    </div>
+    <div class="kpi-card" style="border-left:3px solid var(--bk-red)">
+      <div class="kpi-label">Atrasadas</div>
+      <div class="kpi-value" style="color:var(--bk-red)">${atrasadas}</div>
+      <div class="kpi-sub">${naoIniciadas} não iniciadas</div>
+    </div>
+  `;
+
+  // Barra de progresso geral
+  const barColor = pctGeral >= 80 ? '#10B981' : pctGeral >= 40 ? '#3B82F6' : '#F59E0B';
+
+  listaDiv.innerHTML = `
+    <div style="margin-bottom:20px;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+        <span style="font-size:13px;font-weight:600;">Progresso Geral do Projeto</span>
+        <span style="font-size:13px;color:var(--bk-text-muted)">${pctGeral}%</span>
+      </div>
+      <div class="progress-bar-wrap" style="height:12px;">
+        <div class="progress-bar-fill" style="width:${pctGeral}%;background:${barColor};height:12px;"></div>
+      </div>
+    </div>
+    <div>
+      ${eapTasks.map(t => {
+        const pct = parseFloat(t.percentualConcluido || 0);
+        const statusColors = {
+          'concluido': '#10B981', 'em-andamento': '#3B82F6',
+          'atrasado': '#EF4444', 'nao-iniciado': '#64748B'
+        };
+        const color = statusColors[t.status] || '#64748B';
+        const statusLabels = {
+          'concluido': '✅ Concluído', 'em-andamento': '🔵 Em Andamento',
+          'atrasado': '🔴 Atrasado', 'nao-iniciado': '⚪ Não Iniciado'
+        };
+        return `
+          <div class="controle-card">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+              <div>
+                <span style="font-size:11px;color:var(--bk-text-muted);font-family:monospace;">${escHtml(t.codigo||'')}</span>
+                <span style="font-size:13px;font-weight:600;margin-left:8px;">${escHtml(t.nome||'')}</span>
+              </div>
+              <span style="font-size:12px;color:${color};font-weight:600;">${statusLabels[t.status]||t.status}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div class="progress-bar-wrap" style="flex:1;">
+                <div class="progress-bar-fill" style="width:${pct}%;background:${color};"></div>
+              </div>
+              <span style="font-size:12px;color:var(--bk-text-muted);min-width:35px;">${pct}%</span>
+              ${t.responsavel ? `<span style="font-size:11px;color:var(--bk-text-muted);">👤 ${escHtml(t.responsavel)}</span>` : ''}
+              <span style="font-size:11px;color:var(--bk-text-muted);">${t.duracao||0}d</span>
+            </div>
+          </div>`;
+      }).join('')}
+      ${eapTasks.length === 0 ? '<div style="text-align:center;padding:40px;color:var(--bk-text-muted);">Nenhuma atividade cadastrada na EAP.</div>' : ''}
+    </div>
+  `;
+}
+
+// ══════════════════════════════
+// UTILITÁRIOS
+// ══════════════════════════════
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ══════════════════════════════
+// INIT
+// ══════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  renderEAP();
+  renderGantt();
+  renderCurvaS();
+  renderControle();
+
+  // Re-render ao trocar de aba
+  document.querySelectorAll('.tab-btn[data-group="proj"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tab = btn.dataset.tab;
+      setTimeout(() => {
+        if (tab === 'tab-gantt') renderGantt();
+        if (tab === 'tab-eap') { renderEAP(); renderCurvaS(); }
+        if (tab === 'tab-controle') renderControle();
+      }, 50);
+    });
+  });
+});
+
+// Auto-save a cada 5 min se admin
+{% if is_admin %}
+setInterval(salvarProjeto, 5 * 60 * 1000);
+{% endif %}
+</script>
+
+{% endblock %}
