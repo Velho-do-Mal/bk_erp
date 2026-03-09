@@ -12,4 +12,5 @@ urlpatterns = [
     path('<int:pk>/reabrir/', views.reabrir, name='reabrir'),
     path('<int:pk>/excluir/', views.excluir, name='excluir'),
     path('<int:pk>/acessos/', views.gerenciar_acessos, name='acessos'),
+    path('<int:pk>/controle-docs/', views.controle_docs, name='controle_docs'),
 ]

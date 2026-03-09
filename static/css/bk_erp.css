@@ -339,3 +339,31 @@ textarea.form-control { min-height: 100px; resize: vertical; }
   .main { margin-left: 0; }
   .kpi-grid { grid-template-columns: 1fr 1fr; }
 }
+
+/* ── Extra badges ── */
+.badge-success  { background: rgba(16,185,129,0.15); color: #6EE7B7; }
+.badge-danger   { background: rgba(239,68,68,0.15);  color: #FCA5A5; }
+.badge-warning  { background: rgba(245,158,11,0.15); color: #FCD34D; }
+.badge-secondary { background: rgba(100,116,139,0.15); color: #94A3B8; }
+
+/* ── KPI color variants ── */
+.kpi-blue   { border-left: 3px solid #3B82F6; }
+.kpi-green  { border-left: 3px solid #10B981; }
+.kpi-red    { border-left: 3px solid #EF4444; }
+.kpi-yellow { border-left: 3px solid #F59E0B; }
+.kpi-orange { border-left: 3px solid #F97316; }
+.kpi-teal   { border-left: 3px solid #14B8A6; }
+
+/* ── Table editable input ── */
+.table input.form-control {
+  background: #0d1526;
+  border: 1px solid #2D4A7A;
+  padding: 4px 8px;
+  border-radius: 4px;
+  color: #e2e8f0;
+  font-size: 13px;
+}
+.table input.form-control:focus {
+  outline: none;
+  border-color: #3B82F6;
+}

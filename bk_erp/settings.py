@@ -20,6 +20,13 @@ INSTALLED_APPS = [
     'apps.accounts',
     'apps.projetos',
     'apps.core',
+    'apps.cadastros',
+    'apps.financeiro',
+    'apps.documentos',
+    'apps.estoque',
+    'apps.compras',
+    'apps.vendas',
+    'apps.servicos',
 ]
 
 MIDDLEWARE = [
@@ -91,3 +98,7 @@ LOGIN_REDIRECT_URL = '/dashboard/'
 LOGOUT_REDIRECT_URL = '/login/'
 
 AUTH_USER_MODEL = 'accounts.User'
+
+# Upload limits (logos e anexos)
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024   # 10 MB (JSON body)
+FILE_UPLOAD_MAX_MEMORY_SIZE  = 10 * 1024 * 1024   # 10 MB (multipart)
